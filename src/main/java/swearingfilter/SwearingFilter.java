@@ -27,7 +27,6 @@ public class SwearingFilter {
     public SwearingFilter(File cacheFile, int discardTime, SearchType type) {
         this.discardTime = discardTime;
         this.cache = cacheFile;
-        if (cache.exists()) cache.delete();
         this.type = type;
         this.isLoaded = false;
         workers = new HashMap<>();
@@ -52,8 +51,10 @@ public class SwearingFilter {
             }
         }, "Chess-SwearingDiscardManager");
         discardThread.start();
-        loadFromGithub("de");
-        loadFromGithub("en");
+        if (!cache.exists()) {
+            loadFromGithub("de", true);
+            loadFromGithub("en" ,true);
+        }
     }
 
     private void writeCache() {
@@ -86,7 +87,6 @@ public class SwearingFilter {
                 String in;
                 while ((in = reader.readLine()) != null) {
                     String[] inSplit = in.split("-");
-                    System.out.println(inSplit[0] + " : " + inSplit[1]);
                     if(inSplit[0].matches("[ !\"§$%&/()=?+*#'\\-_.:,;<>|~{}\\[\\]0-9]")) continue;
                     cacheMap.put(inSplit[0].toLowerCase(), Integer.parseInt(inSplit[1].replace(" ", "")));
                 }
@@ -100,7 +100,7 @@ public class SwearingFilter {
         }, SwearingWorker.WorkerType.CACHER));
     }
 
-    private void loadFromGithub(String language) {
+    private void loadFromGithub(String language, boolean appands) {
         int id = calcWorkerID();
         workers.put(id, new SwearingWorker(() -> {
             URL url = null;
@@ -112,7 +112,7 @@ public class SwearingFilter {
                 BufferedReader in = new BufferedReader(new InputStreamReader(
                         connection.getInputStream()));
                 String inputLine;
-                boolean appand = true;
+                boolean appand = appands;
                 if (!cache.exists()) {
                     cache.createNewFile();
                     appand = false;
@@ -120,7 +120,7 @@ public class SwearingFilter {
                 BufferedWriter out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(cache, appand)));
                 while ((inputLine = in.readLine()) != null) {
                     String[] inSplit = inputLine.split("-");
-                    if(inSplit[0].matches("[ !\"§$%&/()=?+*#'\\-_.:,;<>|~{}\\[\\]0-9]")) continue;
+                    if(inSplit[0].matches("[ !\"\u00a7$%&/()=?+*#'\\-_.:,;<>|~{}\\[\\]0-9]")) continue;
                     try {
                         out.write(inSplit[0].toLowerCase() + "-" + inSplit[1].replace(" ", "") + "\n");
                     }catch (ArrayIndexOutOfBoundsException e) {
@@ -140,7 +140,14 @@ public class SwearingFilter {
     }
 
     public CompletableFuture<Result> lockForSwearing(String input) {
-        if (cacheMap.isEmpty()) loadCache();
+        if (cacheMap.isEmpty()) {
+            loadCache();
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
         CompletableFuture<Result> future = new CompletableFuture<>();
         int id = calcWorkerID();
         workers.put(id, new SwearingWorker(() -> {
@@ -181,6 +188,15 @@ public class SwearingFilter {
         logging.add("Discarding!");
         cacheMap.clear();
         isLoaded = false;
+    }
+
+    public void rebaseCache() {
+        discard();
+
+        loadFromGithub("de", false);
+        loadFromGithub("en", true);
+
+        loadCache();
     }
 
     public enum SearchType {
